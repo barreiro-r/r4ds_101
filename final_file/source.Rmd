@@ -1,0 +1,248 @@
+---
+title: "R4DS 101"
+output: html_notebook
+---
+
+Script with final outputs of the R4DS 101 labmeeting;
+
+
+***
+
+
+
+### Load {tidyverse}
+```{r}
+suppressPackageStartupMessages({
+  library(tidyverse)  
+})
+```
+
+### Load theme
+```{r}
+library(hrbrthemes)
+library(ggtext)
+theme_set(
+  theme_ipsum_rc(grid = 'XY') +
+    theme(
+      plot.title.position = "plot",
+      plot.margin = margin(25,25,25,25),
+      axis.title.x = element_markdown(hjust = .5, size = 12, margin = margin(10,0,0,0)),
+      axis.title.y = element_markdown(hjust = .5, size = 12, margin = margin(0,10,0,0)),
+      plot.subtitle = element_markdown(family = 'Roboto Condensed', color = 'grey60')
+    )
+)
+```
+
+## Gencode data!
+
+### Load first dataset (from gencode v38)
+
+```{r}
+gencode_chr22 <- 
+  read_tsv('../input/gencode.v38.annotation.chr22.gtf',
+           col_names = c('seqname','source','feature','start','end','score','strand','frame','attribute'),
+           show_col_types = FALSE)
+
+gencode_chr22 %>% head()
+```
+
+### Get a general idea from the Data
+Use `skim()` from {skimr} to get a brief summary of the data
+
+```{r}
+skimr::skim(gencode_chr22)
+```
+
+### Clean data
+```{r}
+# Extract value from attribute
+gencode_chr22 <-
+  gencode_chr22 %>%
+  mutate(gene_id = str_match(attribute, 'gene_id "([^"]*)')[,2]) %>%
+  mutate(gene_name = str_match(attribute, 'gene_name "([^"]*)')[,2]) %>%
+  mutate(gene_type = str_match(attribute, 'gene_type "([^"]*)')[,2]) %>%
+  select(gene_name, gene_id, gene_type, feature, attribute)
+
+gencode_chr22 %>%
+  head()
+```
+
+### Questions
+1. How many genes are there in the chr17?
+```{r}
+gencode_chr22 %>%
+  filter(feature == 'gene') %>%
+  count()
+```
+2. Which features are there in this file?
+
+```{r}
+library(gt)
+library(gtExtras)
+gencode_chr22 %>%
+  count(feature, sort = TRUE) %>%
+  gt() %>%
+  gt_theme_nytimes() %>%
+  tab_header(title = "Features in chr22") %>%
+  gt_plt_dot(n, feature,palette = "rcartocolor::ag_GrnYl", max_value=31502)
+```
+
+
+3. Which kind of gene are there in chr17?
+
+```{r echo=TRUE}
+gencode_chr22 %>%
+  filter(feature == 'gene') %>%
+  count(gene_type, sort = TRUE) %>%
+  head() %>%
+  gt() %>%
+  gt_theme_nytimes() %>%
+  tab_header(title = "Gene types in chr22") %>%
+  gt_plt_dot(n, gene_type,palette = "rcartocolor::ag_GrnYl", max_value=444)
+```
+
+### Let's plot!
+```{r}
+gencode_chr22 %>%
+  filter(feature == 'gene') %>%
+  mutate(gene_type = fct_lump(gene_type, 5)) %>%
+  count(gene_type) %>%
+  ggplot(aes(x = fct_reorder(gene_type,n), y = n, fill = fct_reorder(gene_type,n))) +
+  coord_flip() +
+  labs(
+    x = NULL, 
+    y = '**Frequency** (n)',
+    title = 'Chromossome 22',
+    subtitle = 'Gene type couting for genes in chr22',
+    caption = 'rbarreiro 2021 / Gencode version 28') +
+  geom_col() +
+  scale_y_continuous(expand = c(0,0,0.05,0)) +
+  guides(fill = 'none') +
+  ggsci::scale_fill_jco()
+```
+
+
+### Which gene type have the most amount of exons? 
+```{r}
+gencode_chr22 %>%
+  filter(feature == 'exon') %>%
+  mutate(transcript_id = str_match(attribute, 'transcript_id "([^"]*)')[,2]) %>%
+  count(gene_name, gene_type, transcript_id) %>%
+  group_by(gene_name) %>%
+  slice_max(1) %>%
+  ungroup() %>%
+  mutate(gene_type = fct_lump(gene_type, 5)) %>%
+  ggplot(aes(x = fct_reorder(gene_type, n), y = n)) +
+  geom_boxplot(outlier.shape = NA) +
+  ggbeeswarm::geom_quasirandom(alpha = .1) +
+  coord_flip(ylim = c(0,25)) +
+  labs(x = NULL, y = '**Number of exons** (n)', title = 'Number of exons')
+```
+
+```{r}
+gencode_chr22 %>%
+  filter(feature == 'exon') %>%
+  mutate(transcript_id = str_match(attribute, 'transcript_id "([^"]*)')[,2]) %>%
+  count(gene_name, gene_type, transcript_id, sort = TRUE) %>%
+  group_by(gene_name) %>%
+  slice_max(1) %>%
+  ungroup() %>%
+  mutate(gene_type = fct_lump(gene_type, 5)) %>%
+  arrange(-n) %>%
+  mutate(text = glue::glue('The gene {gene_name} is a {gene_type} gene and have {n} exons;')) %>%
+  head() %>%
+  pull(text)
+```
+
+
+
+
+
+## DESeq2 data 
+
+
+### Load first dataset (from gencode v38)
+```{r}
+my_data <- 
+  read_tsv('../input/CvsKD.deseq2.tsv')
+```
+
+
+```{r}
+my_data %>%
+  skimr::skim()
+```
+
+```{r}
+library(gt)
+library(gtExtras)
+my_data %>%
+  janitor::clean_names() %>%
+  na.omit() %>%
+  select(base_mean, log2fold_change, lfc_se, stat, padj) %>%
+  pivot_longer(values_to = "value", names_to = "variable",dplyr::everything()) %>%
+  group_by(variable) %>%
+  summarise(values = list(value)) %>%
+  gt() %>%
+  gt_sparkline(values,type = 'histogram', same_limit = FALSE)
+```
+
+
+```{r}
+bind_rows(
+  my_data %>%
+  janitor::clean_names() %>%
+  na.omit() %>%
+  filter(padj < 0.01) %>%
+  slice_max(log2fold_change, n = 10),
+  my_data %>%
+  janitor::clean_names() %>%
+  na.omit() %>%
+  filter(padj < 0.01) %>%
+  slice_min(log2fold_change, n = 10)
+) %>%
+  select(genes, log2fold_change, padj) %>%
+  arrange(-log2fold_change) %>%
+  mutate(padj = -log10(padj)) %>%
+  gt() %>%
+  gt_theme_nytimes() %>%
+  tab_header(title = "Top 10 up-regulated and down-regulated genes") %>%
+  gt_color_box(log2fold_change, domain=c(-10,10)) %>%
+  gt_color_box(padj, domain=c(0,15), palette = c('white','blue'))
+```
+
+### Volcano plot
+
+```{r}
+p1 <-
+my_data %>%
+  janitor::clean_names() %>%
+  na.omit() %>%
+  mutate(log10_padj = (-1)*log10(padj)) %>%
+  ggplot(aes(x = log2fold_change, y = log10_padj)) +
+  geom_point() +
+  gghighlight::gghighlight((abs(log2fold_change) > 2) & (log10_padj > 2)) +
+  labs(
+    x = '**Fold Change** (log2)',
+    y = '**-P-adjusted** (log10)',
+    title = 'Differentially expressed genes',
+    subtitle = 'Cutoffs: l2fc > 2 / padj < 0.01')
+
+genes_of_interest <- c('ENSG00000236698.1', 'ENSG00000250111.3')
+p2 <-
+  my_data %>%
+  janitor::clean_names() %>%
+  mutate(my_label = glue::glue('{genes}\nl2fc {round(log2fold_change,2)}\n-log10padj{round(-log10(padj),2)}')) %>%
+  mutate(log10_padj = (-1)*log10(padj)) %>%
+  ggplot(aes(x = log2fold_change, y = log10_padj)) +
+  geom_point() +
+  labs(x = '**Fold Change** (log2)', y = '**-P-adjusted** (log10)') +
+  gghighlight::gghighlight(
+    genes %in% genes_of_interest,
+    label_key = my_label,
+    label_params = list(size = 2))
+
+library(patchwork)
+print(p1 + p2)
+```
+
