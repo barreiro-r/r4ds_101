@@ -211,6 +211,29 @@ bind_rows(
   gt_color_box(padj, domain=c(0,15), palette = c('white','blue'))
 ```
 
+### Genes Up/Down-Regulated
+```{r}
+p3 <- 
+my_data %>%
+  janitor::clean_names() %>%
+  na.omit() %>%
+  mutate(categ = case_when(
+    log2fold_change > 2 & padj < 0.01 ~ 'up-regulated',
+    log2fold_change < -2 & padj < 0.01 ~ 'down-regulated',
+    TRUE ~ 'unchanged'
+  )) %>%
+  count(categ) %>%
+  filter(categ != 'unchanged') %>%
+  ggplot(aes(x = categ, y = n)) +
+  geom_col(aes(fill = categ)) +
+  geom_label(aes(label = n)) +
+  guides(fill = 'none') +
+  labs(x = NULL, y = "Frequency")
+
+
+```
+
+
 ### Volcano plot
 
 ```{r}
@@ -243,6 +266,6 @@ p2 <-
     label_params = list(size = 2))
 
 library(patchwork)
-print(p1 + p2)
+(p3) / (p1 + p2)
 ```
 
